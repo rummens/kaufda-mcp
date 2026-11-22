@@ -123,12 +123,27 @@ Bring! bietet keine offizielle API. Genutzt werden die Endpunkte der Bring! Apps
 * *"Schau dir meine Einkaufsliste an und mach daraus einen Einkaufsplan. Wo komm ich insgesamt am günstigsten weg?"*
 * *"Bei Trinken such mir was Gutes raus, ich will nicht in mehr als zwei Läden."*
 
+## Fork (rummens): Änderungen gegenüber vertexitde/kaufda-mcp
+
+Für den Einsatz in einem Hermes-Bot (Neelix) mit `trust: untrusted`:
+
+- **`readOnlyHint` an jedem Tool.** Die 10 lesenden Tools (Suche, Prospekte, Profil lesen, Bring! lesen) sind
+  als nur lesend markiert, die 6 schreibenden (`set_preferences`, `bring_*` mit Schreibzugriff) nicht. Clients,
+  die vor jedem schreibfähigen Aufruf fragen, fragen so nicht bei jeder Suche. Test: `tests/test_annotations.py`.
+- **`KAUFDA_STORES` und `KAUFDA_APPS`** (kommagetrennt) als Vorgabe, solange nichts gespeichert ist. Ein Bot
+  braucht damit `set_preferences` nicht.
+- **Direkte Abhängigkeiten exakt gepinnt** (wie in `uv.lock`), weil `uvx --from git+…` die Lock-Datei ignoriert.
+  Transitive Abhängigkeiten sind damit noch nicht gepinnt.
+
+Einbinden mit festem Tag: `uvx --from git+https://github.com/rummens/kaufda-mcp@0.6.1 kaufda-mcp`
+
 ## Entwicklung
 
 ```bash
 git clone https://github.com/vertexitde/kaufda-mcp && cd kaufda-mcp
 uv sync
 uv run python tests/test_normalize.py   # Unit Tests, offline
+uv run python tests/test_annotations.py # readOnlyHint je Tool, KAUFDA_STORES/APPS, offline
 uv run python tests/smoke_live.py       # alle Tools live gegen kaufda.de
 uv run python tests/smoke_stdio.py      # Server per stdio wie ein MCP Client starten
 uv run python tests/check_days.py       # Gültigkeit abhängig vom Wochentag

@@ -22,6 +22,11 @@ def default_path() -> Path:
     return base / "kaufda-mcp" / "preferences.json"
 
 
+def _env_list(name: str) -> list[str]:
+    """Comma separated default from the environment, used while nothing is saved (servers, bots)."""
+    return [part.strip() for part in os.environ.get(name, "").split(",") if part.strip()]
+
+
 class PreferenceStore:
     def __init__(self, path: Path | None = None):
         self.path = path or default_path()
@@ -40,10 +45,10 @@ class PreferenceStore:
         tmp.replace(self.path)
 
     def stores(self) -> list[str]:
-        return list(self.load().get("stores") or [])
+        return list(self.load().get("stores") or _env_list("KAUFDA_STORES"))
 
     def apps(self) -> list[str]:
-        return list(self.load().get("apps") or [])
+        return list(self.load().get("apps") or _env_list("KAUFDA_APPS"))
 
     def radius_km(self) -> float:
         value = self.load().get("max_distance_km")

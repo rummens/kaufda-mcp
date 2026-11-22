@@ -16,6 +16,7 @@ from typing import Annotated, Any, Literal
 
 from mcp.server.fastmcp import FastMCP, Image
 from mcp.server.fastmcp.exceptions import ToolError
+from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
 from . import normalize as N
@@ -78,6 +79,11 @@ chosen store. Only after the user's OK call bring_add_items. Its result reads th
 spec_saved, flags_saved), so report truthfully what really arrived in Bring!. Flags: urgent (Dringend), \
 convenient (Wenn's passt), discounted (Im Angebot).
 """
+
+# Tools that only read (kaufDA, the saved profile, the Bring! list) carry readOnlyHint, so MCP clients
+# that ask before every write-capable call (e.g. Hermes with trust: untrusted) do not ask for searches.
+READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=True)
+WRITES = ToolAnnotations(readOnlyHint=False, openWorldHint=True)
 
 mcp = FastMCP("kaufda", instructions=INSTRUCTIONS, log_level=os.environ.get("KAUFDA_MCP_LOGLEVEL", "WARNING").upper())
 client = KaufdaClient()
@@ -326,7 +332,7 @@ async def _search(query: str, loc: dict[str, Any], *, wanted: list[str], when: s
 
 # ====================================================================== tools
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_preferences() -> str:
     """Show the saved home location, favourite stores, the apps/loyalty cards the user uses and the search
     radius. Call this first."""
@@ -355,7 +361,7 @@ async def get_preferences() -> str:
     return _dump(out)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITES)
 async def set_preferences(
     location: Annotated[str | None, Field(description="New home location: PLZ, Ort or address.")] = None,
     stores: Annotated[list[str] | None, Field(
@@ -408,7 +414,7 @@ async def set_preferences(
     return _dump(out)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def search_offers(
     query: Annotated[str, Field(description="Product in German, e.g. 'Butter', 'Rinderhack', 'Kaffee Bohnen'.")],
     location: LocationArg = None,
@@ -707,7 +713,7 @@ def _plan_out(label: str, ev: dict[str, Any], entries: list[dict[str, Any]], det
     return N.compact(out)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def shopping_list(
     items: Annotated[list[str] | None, Field(
         max_length=40, description="Short item names like on a shopping list: ['Milch', 'Butter', 'Trinken']. "
@@ -821,7 +827,7 @@ async def shopping_list(
     return _dump(N.compact(out))
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def list_brochures(
     location: LocationArg = None,
     stores: StoresArg = None,
@@ -940,7 +946,7 @@ def _viewer_offers(pages: list[dict[str, Any]], retailer: str | None) -> list[di
     return out
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def get_brochure_offers(
     brochure_id: Annotated[str, Field(description="brochure_id from list_brochures or search_offers.")],
     query: Annotated[str | None, Field(description="Only offers whose name/brand/category contain these words.")] = None,
@@ -979,7 +985,7 @@ async def get_brochure_offers(
     }))
 
 
-@mcp.tool(structured_output=False)
+@mcp.tool(structured_output=False, annotations=READ_ONLY)
 async def view_brochure_page(
     brochure_id: Annotated[str, Field(description="brochure_id from list_brochures or search_offers.")],
     page: Annotated[int, Field(ge=1, description="Page number, 1 = cover (same numbering as 'page' in offers).")],
@@ -1039,7 +1045,7 @@ def _crop_area(page_jpeg: bytes, area: dict[str, Any], margin: float) -> bytes:
         return out.getvalue()
 
 
-@mcp.tool(structured_output=False)
+@mcp.tool(structured_output=False, annotations=READ_ONLY)
 async def view_offer(
     offer_id: Annotated[str, Field(description="offer_id from search_offers / get_brochure_offers.")],
     brochure_id: Annotated[str, Field(description="brochure_id the offer belongs to.")],
@@ -1094,7 +1100,7 @@ async def view_offer(
     raise ToolError(f"Angebot {oid} nicht in Prospekt {bid} gefunden.")
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def suggest_search_terms(
     query: Annotated[str, Field(description="Start of a product word, e.g. 'Hafer'.")],
 ) -> str:
@@ -1151,7 +1157,7 @@ async def _bring_list(list_name: str | None) -> dict[str, str]:
     raise ToolError(f"Mehrere Bring! Listen vorhanden ({names}). Den Nutzer fragen und bring_select_list aufrufen.")
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def bring_status() -> str:
     """Is the user's Bring! account connected? Shows the account, the selected list and all lists."""
     try:
@@ -1182,7 +1188,7 @@ async def bring_status() -> str:
     return _dump(N.compact(out))
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITES)
 async def bring_connect() -> str:
     """Start the Bring! login: returns a one-time link to a local login page (on this computer, valid 10 minutes).
     Give the link to the user; they enter their Bring! mail and password there, directly, so the password never
@@ -1206,7 +1212,7 @@ async def bring_connect() -> str:
     }))
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITES)
 async def bring_select_list(
     list_name: Annotated[str, Field(description="Name (or uuid) of the Bring! list, e.g. 'Zuhause'.")],
 ) -> str:
@@ -1219,7 +1225,7 @@ async def bring_select_list(
     return _dump({"saved": True, "bring_list": entry["name"]})
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 async def bring_get_list(
     list_name: Annotated[str | None, Field(description="Other list than the selected one.")] = None,
 ) -> str:
@@ -1241,7 +1247,7 @@ async def bring_get_list(
     })
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITES)
 async def bring_add_items(
     items: Annotated[list[BringItemIn], Field(min_length=1, max_length=60,
                                               description="Items to put on the list (existing ones get updated).")],
@@ -1272,7 +1278,7 @@ async def bring_add_items(
     return _dump(out)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITES)
 async def bring_remove_items(
     names: Annotated[list[str], Field(min_length=1, description="Item names to take off the list.")],
     mark_as_bought: Annotated[bool, Field(
@@ -1289,7 +1295,7 @@ async def bring_remove_items(
     return _dump({"list": entry["name"], "items": done})
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITES)
 async def bring_disconnect() -> str:
     """Disconnect Bring!: deletes the session and the remembered mail and password from this computer."""
     bring.forget()
