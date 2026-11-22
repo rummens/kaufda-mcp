@@ -135,7 +135,11 @@ Für den Einsatz in einem Hermes-Bot (Neelix) mit `trust: untrusted`:
 - **Direkte Abhängigkeiten exakt gepinnt** (wie in `uv.lock`), weil `uvx --from git+…` die Lock-Datei ignoriert.
   Transitive Abhängigkeiten sind damit noch nicht gepinnt.
 
-Einbinden mit festem Tag: `uvx --from git+https://github.com/rummens/kaufda-mcp@0.6.1 kaufda-mcp`
+- **0.6.2: `get_brochure_offers` mit `categories`, `exclude`, `compact` und `sort="discount"`.** Damit lassen
+  sich die besten Lebensmittel-Angebote eines ganzen Prospekts in ~10.000 Zeichen statt ~170.000 holen;
+  `compact` liefert zusätzlich eine Markenzählung (z. B. Lidl Deluxe-Woche). Test: `tests/test_brochure_filters.py`.
+
+Einbinden mit festem Tag: `uvx --from git+https://github.com/rummens/kaufda-mcp@0.6.2 kaufda-mcp`
 
 ## Entwicklung
 
@@ -144,6 +148,7 @@ git clone https://github.com/vertexitde/kaufda-mcp && cd kaufda-mcp
 uv sync
 uv run python tests/test_normalize.py   # Unit Tests, offline
 uv run python tests/test_annotations.py # readOnlyHint je Tool, KAUFDA_STORES/APPS, offline
+uv run python tests/test_brochure_filters.py # Filter/compact/sort in get_brochure_offers, offline
 uv run python tests/smoke_live.py       # alle Tools live gegen kaufda.de
 uv run python tests/smoke_stdio.py      # Server per stdio wie ein MCP Client starten
 uv run python tests/check_days.py       # Gültigkeit abhängig vom Wochentag

@@ -929,6 +929,17 @@ async def _load_brochure(brochure_id: str, location: str | None):
     return bid, meta, pages
 
 
+COMPACT_KEYS = ("product", "brand", "_category", "description", "price_text", "app_price", "program",
+                "discount_pct", "validity", "page", "app_only", "online_only", "multi_buy", "conditions")
+
+
+def _compact_offer(o: dict[str, Any]) -> dict[str, Any]:
+    out = {("category" if k == "_category" else k): o.get(k) for k in COMPACT_KEYS}
+    if isinstance(out.get("description"), str) and len(out["description"]) > 70:
+        out["description"] = out["description"][:67] + "..."
+    return N.compact(out)
+
+
 def _viewer_offers(pages: list[dict[str, Any]], retailer: str | None) -> list[dict[str, Any]]:
     now = N.now_berlin()
     apps = prefs.apps()
@@ -938,10 +949,11 @@ def _viewer_offers(pages: list[dict[str, Any]], retailer: str | None) -> list[di
             content = entry.get("content") or {}
             offer = N.personalize(N.offer_from_viewer(content, retailer=retailer, now=now), apps)
             offer.pop("brochure_id", None)
-            offer["_categories"] = " ".join(
-                n.get("name", "") for p in content.get("products") or [] for n in p.get("categoryPaths") or []
-                if isinstance(n, dict)
-            )
+            nodes = [n for p in content.get("products") or [] for n in p.get("categoryPaths") or []
+                     if isinstance(n, dict)]
+            offer["_categories"] = " ".join(n.get("name", "") for n in nodes)
+            offer["_category"] = (f"{nodes[0].get('name', '')} › {nodes[-1].get('name', '')}"
+                                  if len(nodes) > 1 else (nodes[0].get("name") if nodes else None))
             out.append(offer)
     return out
 
@@ -953,20 +965,50 @@ async def get_brochure_offers(
     page: Annotated[int | None, Field(ge=1, description="Only offers on this page (1 = cover).")] = None,
     location: LocationArg = None,
     max_results: Annotated[int, Field(ge=1, le=400)] = 80,
+    categories: Annotated[list[str] | None, Field(
+        description="Keep only offers whose kaufDA category path contains one of these words, e.g. "
+                    "['Lebensmittel und Getränke']. Offers without a category are kept.")] = None,
+    exclude: Annotated[list[str] | None, Field(
+        description="Drop offers whose category path, name or brand contains one of these words, e.g. "
+                    "['Alkoholische Getränke', 'Elektronik'].")] = None,
+    compact: Annotated[bool, Field(
+        description="Short rows (product, brand, category, price, discount, validity, page, conditions) "
+                    "and a brand count, for scanning a whole brochure. About a quarter of the size.")] = False,
+    sort: Annotated[Literal["page", "discount"], Field(
+        description="page (brochure order) or discount (highest discount_pct first, offers without one "
+                    "last). With max_results this gives the best deals of a brochure.")] = "page",
 ) -> str:
     """All offers inside one brochure with prices, conditions (e.g. 'Nur mit App') and per-offer validity.
-    Use query/page to narrow down large brochures."""
+    Use query/page/categories/exclude to narrow down large brochures, compact=True to scan one."""
     bid, meta, pages = await _load_brochure(brochure_id, location)
     retailer = (meta.get("publisher") or {}).get("name")
     offers = _viewer_offers(pages, retailer)
+
+    def wanted(o: dict[str, Any]) -> bool:
+        cats = o.get("_categories") or ""
+        if categories and cats and not any(N.text_matches(c, cats) for c in categories):
+            return False
+        if exclude and any(N.text_matches(x, cats, o.get("product"), o.get("brand")) for x in exclude):
+            return False
+        return True
+
     selected = [
         o for o in offers
         if (page is None or o.get("page") == page)
         and (not query or N.text_matches(query, o.get("product"), o.get("brand"), o.get("description"),
                                          o.get("_categories")))
+        and wanted(o)
     ]
+    if sort == "discount":
+        selected.sort(key=lambda o: -(o.get("discount_pct") or -1))
+    brand_counts = None
+    if compact:
+        brand_counts = dict(Counter((o.get("brand") or "").strip().upper() for o in selected
+                                    if (o.get("brand") or "").strip()).most_common(12))
+        selected = [_compact_offer(o) for o in selected]
     for o in selected:
         o.pop("_categories", None)
+        o.pop("_category", None)
         o.pop("retailer", None)
     info = N.brochure_summary(meta) if meta else {"brochure_id": bid, "viewer_url": N.viewer_url(bid)}
     notes = []
@@ -980,6 +1022,7 @@ async def get_brochure_offers(
         "page_count": len(pages),
         "offers_in_brochure": len(offers),
         "matching": len(selected),
+        "brands": brand_counts,
         "offers": selected[:max_results],
         "notes": notes,
     }))
@@ -1010,6 +1053,7 @@ async def view_brochure_page(
     offers = [o for o in _viewer_offers([target], retailer)]
     for o in offers:
         o.pop("_categories", None)
+        o.pop("_category", None)
         o.pop("retailer", None)
         o.pop("viewer_url", None)
         o.pop("cutout_url", None)
